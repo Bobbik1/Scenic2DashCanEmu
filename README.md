@@ -1,9 +1,13 @@
 # A lowcost DIY CAN bus emulator for Renault Scenic 2 dashboard repair
 
+This code is an adapted version of the original
+[UNO+MCP515](https://github.com/dirksan28/Scenic2DashCanEmu) based project by
+@dirksan28 for an ESP32 board with a CAN transceiver (e.g. SN65HVD230).
+
 ## Features
 - build to test your Renault Scenic 2 dashboard after and during repair
 - powers up your dashboard without the need of installation in the car
-- large test sequence. Shows saved km/milage on startup. (see video) 
+- large test sequence. Shows saved km/milage on startup. (see video)
 - if connected to a serial console: timestamp and message logging on screen
 - standalone operation (only with charging adapter) possible
 
@@ -14,48 +18,69 @@
 
 
 ## What you need
-- an Arduino (Uno) a cheap clone also works ;-)
-- a MCP2515 module (e.g. https://www.amazon.com/s?k=MCP2515)
-- The Arduino IDE https://www.arduino.cc/en/software to compile and upload the sketch to the arduino. 
+- an ESP32 board (any ESP32 board should work, tested with a basic [esp32 dev kit](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/hw-reference/esp32/get-started-devkitc.html) board)
+- a CAN transceiver module (e.g. https://www.amazon.com/s?k=SN65HVD230 or https://www.aliexpress.com/wholesale?catId=0&SearchText=SN65HVD230+arduino) Make sure to choose one that have a 120Ω termination resistor.
+- The platformio embedded developement framework (cli or IDE) https://platformio.org to compile and upload the sketch to the ESP32.
 
 ## Hardware
-![](./pics/wireing.jpg)
 
 ### Wireing
-#### Arduino <-> MCP2515
-![](./pics/mcp2515-arduino.jpg)
-| PIN on Arduino  | PIN on MCP2515 CAN Bus Breakout Board  |
+#### ESP32 <-> VP230
+| PIN on ESP21 | PIN on VP230 CAN Bus Breakout Board  |
 | ------------ | ------------ |
-|D2|INT|
-|D10|CS|
-|D11|SI|
-|D12|SO|
-|D13|SCK|
-|5V |VCC|
-|GND|GND|
+| D21 | CTX |
+| D22 | CRX |
+| 3V3 | 3V3 |
+| GND | GND |
 
-On the MCP2515 board there is a jumper which is labeled J1.
-To work properly, make sure it is closed so the CAN bus termination is enabled.
+To work properly, make sure the CAN bus termination resistor is populated.
 
 #### The dashboard
-|PIN# (grey connector on dash)| meaning|
-| ------------ | ------------ |
-|1|+12V|
-|2|GND|
-|29|CAN LOW|
-|30|CAN HI|
+|PIN# (grey connector on dash)| meaning |
+| --------------------------- | ------- |
+| 1                           | +12V    |
+| 2                           | GND     |
+| 29                          | CAN LOW |
+| 30                          | CAN HI  |
 
-##### Hint 
+##### Hint
 The dash takes about 4-5 amps peak current (filament heating, caps) when it starts up.
 Especially when using small current limiting lab power supplies this may become a thing.
 Make sure your power supply and cabling is sufficient.
 
 ## Software
-The arduino project can be compiled and uploaded via the Arduino IDE. Either clone this project or download it as a [ZIP-File](https://github.com/dirksan28/Scenic2DashCanEmu/archive/refs/heads/main.zip).
-The code which runs on the arduino is based on [MCP_CAN_lib](https://github.com/coryjfowler/MCP_CAN_lib).
-For convenience a copy of this library also is part of this project. Just put the can-library into the library folder of your Arduino IDE (on linux: ~/Arduino/libraries).
+The project can be compiled and uploaded via the platformio development tools. Either
+clone this project or download it as a
+[ZIP-File](https://github.com/douarda/Scenic2DashCanEmu/archive/refs/heads/esp32.zip).
 
-The Message-Sequence can be extended or modified by patching the following code fragments within the [canEmu.ino](./Arduino/canEmulator/canEmulator.ino "link to canEmu.ino") file:
+```bash
+
+(pio) david@shuttle:~/src/Scenic2DashCanEmu$ pio run -t upload
+Processing esp32 (framework: arduino; platform: https://github.com/tasmota/platform-espressif32/releases/download/v2.0.2idf/platform-espressif32-2.0.2.zip; board: esp32dev)
+-------------------------------------------------------------------------------------------------
+Verbose mode can be enabled via `-v, --verbose` option
+CONFIGURATION: https://docs.platformio.org/page/boards/espressif32/esp32dev.html
+PLATFORM: Espressif 32 (2.0.2) > Espressif ESP32 Dev Module
+HARDWARE: ESP32 240MHz, 320KB RAM, 4MB Flash
+DEBUG: Current (esp-prog) External (esp-prog, iot-bus-jtag, jlink, minimodule, olimex-arm-usb-ocd, olimex-arm-usb-ocd-h, olimex-arm-usb-tiny-h, olimex-jtag-tiny, tumpa)
+PACKAGES:
+ - framework-arduinoespressif32 2.0.2
+ - tool-esptoolpy 1.30200.211025 (3.2.0)
+ - tool-mklittlefs 1.203.210628 (2.3)
+ - tool-mkspiffs 2.230.0 (2.30)
+ - toolchain-xtensa-esp32 8.4.0+2021r2
+Converting canEmulator.ino
+[...]
+Wrote 184224 bytes (105875 compressed) at 0x00010000 in 2.8 seconds (effective 518.4 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...
+================================== [SUCCESS] Took 8.03 seconds ==================================
+```
+
+The Message-Sequence can be extended or modified by patching the following code
+fragments within the [canEmulator.ino](./src/canEmulator.ino "link to canEmu.ino") file:
 
 ### Code
 ```c
@@ -87,15 +112,23 @@ const struct msgStruct messages[] PROGMEM = { //load into flash-memory (sram was
   ...
   };
 ```
-To see what the code is doing. Start the serial console of the Arduino IDE at 9600 Boud.
+To see what the code is doing. Start the serial console at 115200 Baud:
 
-#### Hint
-If you remove line #4
+```bash
+
+$ pio device monitor -b 115200
+--- Available filters and text transformations: colorize, debug, default, direct, esp32_exception_decoder, hexlify, log2file, nocontrol, printable, send_on_enter, time
+--- More details at https://bit.ly/pio-monitor-filters
+--- Miniterm on /dev/ttyUSB0  115200,8,N,1 ---
+--- Quit: Ctrl+C | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
+0:1:42	58	{2, 743, 8, {4, 30, 4, 20, BC, 0, 0, 0, }}
+0:1:43	59	{7, 743, 8, {4, 30, 3, 11, 1, 0, 0, 0, }}
+0:1:46	60	{15, 60D, 8, {0, 0, 0, 0, 63, 0, 21, 70, }}
+0:1:54	0	{1, 743, 8, {2, 10, C0, 0, 0, 0, 0, 0, }}
+0:1:54	1	{3, 743, 8, {4, 30, 6, 20, FF, 0, 0, 0, }}
+0:1:56	2	{3, 743, 8, {4, 30, 7, 20, FF, 0, 0, 0, }}
+
 ```
-#define ENABLE_CANBUS
-```
-output to the MCP2515 breakout board will be skipped.
-By doing so the code runs fine within the free [WOKI Online Arduino Simulator](https://wokwi.com/arduino/new?template=arduino-uno) wich makes it easier for debugging purposes.
 
 ## Current state
 The code was tested on a V5.14 dashbord and runs fine.

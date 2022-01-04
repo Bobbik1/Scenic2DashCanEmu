@@ -1,20 +1,22 @@
-#define SPI_CS_PIN 10
-#define CAN_INT_PIN 2
-#define SERIAL_SPEED 9600 //boud rate for arduino serial console debug output
-#define ENABLE_CANBUS //comment out to avoid usage of mcp-board (for testing)
+#include <Arduino.h>
+
 #define SPEEDUP 500 //the smaler, the faster (default is 1000)
 
-#include <SPI.h>
-#include <mcp_can.h> //https://github.com/coryjfowler/MCP_CAN_lib
+#include "driver/gpio.h"
+#include "driver/twai.h"
 
-MCP_CAN CAN(SPI_CS_PIN); //global init of can-library
+#define SERIAL_SPEED 115200 //boud rate for arduino serial console debug output
+
+#define CAN_TX GPIO_NUM_21
+#define CAN_RX GPIO_NUM_22
+
 unsigned long startTime;
 
 struct msgStruct {
   byte duration; //how long to wait before next msg is send
   short id;      //the CAN-ID
-  INT8U dlc;     //Number of data-bytes in this msg (currently <= 8 bytes)
-  INT8U data[8]; //the data which is send to the dash
+  uint8_t dlc;     //Number of data-bytes in this msg (currently <= 8 bytes)
+  uint8_t data[8]; //the data which is send to the dash
 };
 
 /**
@@ -24,8 +26,8 @@ struct msgStruct {
  * {duration, id, dlc {byte1, byte2, ... byte_dlc}}
 **/
 const struct msgStruct initMessages[] PROGMEM = {
-   {10, 0x35d, 8, { 0x10, 0x03, 0x20, 0x00, 0x00, 0x00, 0x50, 0x00}}   //dash on
-  ,{4, 0x60d, 8, { 0x00, 0x10, 0x00, 0x00, 0x27, 0x73, 0x21, 0x71}}    //reset displ state
+    {10, 0x35d, 8, { 0x10, 0x03, 0x20, 0x00, 0x00, 0x00, 0x50, 0x00}}   //dash on
+  , {4, 0x60d, 8, { 0x00, 0x10, 0x00, 0x00, 0x27, 0x73, 0x21, 0x71}}    //reset displ state
   , {20, 0x60d, 8, { 0x08, 0x10, 0x00, 0x00, 0x32, 0xFF, 0x2f, 0x10}}  //show saved km
   
   //,{10, 0x60d, 8, { 0x00, 0x00, 0x00, 0x00, 0x63, 0x00, 0x21, 0x70}} //disp normal
@@ -143,14 +145,17 @@ void printMsg(int i, msgStruct msg){
  * m = the message it self
  */
 void sendMsg(int i, msgStruct m){
-    printMsg(i, m);
+  printMsg(i, m);
+  twai_message_t msg;
+  msg.identifier = m.id;
+  msg.data_length_code = m.dlc;
+  for (uint8_t i=0; i<m.dlc; ++i)
+    msg.data[i] = m.data[i];
 
-#if defined(ENABLE_CANBUS)
-      while (CAN_OK != CAN.sendMsgBuf(m.id, 0, m.dlc, m.data)){ //here we send the CAN-Messages
-        Serial.println(F("Error sending message... repeating"));
-        delay(((m.duration==0)?1:m.duration)*SPEEDUP); //wait for <duration> secs.
-      }
-#endif
+  while (twai_transmit(&msg, pdMS_TO_TICKS(1000)) != ESP_OK) {
+    Serial.println(F("Error sending message... repeating"));
+    delay(((m.duration==0)?1:m.duration)*SPEEDUP); //wait for <duration> secs.
+  }
   delay(((m.duration==0)?1:m.duration)*SPEEDUP); //wait for <duration> secs.   
 }
 
@@ -160,17 +165,28 @@ void sendMsg(int i, msgStruct m){
 void setup(){
   Serial.begin(SERIAL_SPEED); //speed for arduino serial monitor
   while (!Serial);
-#if defined(ENABLE_CANBUS)
-  Serial.println(F("CAN setup.."));
-  while (CAN_OK != CAN.begin(MCP_STDEXT, CAN_500KBPS, MCP_8MHZ)){ //CAN-Bus setup
-    delay(500);
-    Serial.println(F("CAN BUS: starting error! Trying again..."));
+
+  // try with GPIO_NUM_21 & 22
+  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX, CAN_RX, TWAI_MODE_NORMAL);
+  twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
+  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+  //Install TWAI driver
+  if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+    printf("Driver installed\n");
+  } else {
+    printf("Failed to install driver\n");
+    return;
   }
-  CAN.setMode(MCP_NORMAL);
-  Serial.println(F("Please wait for disp startup..."));
-  delay(5000); //just wait for a while...
-#endif
-  
+
+  //Start TWAI driver
+  if (twai_start() == ESP_OK) {
+    printf("Driver started\n");
+  } else {
+    printf("Failed to start driver\n");
+    return;
+  }
+
   startTime = millis();
   //send display init commands
   msgStruct m;
