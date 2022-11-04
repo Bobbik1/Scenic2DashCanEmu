@@ -146,6 +146,7 @@ The code was tested on a V5.14 dashbord and runs fine.
 
 ## Known issues
 - CAN message to activate the lightbulb symbol is currently unknown  ![](./pics/missingBulbInd.png)
+I think it is realised analogue, with pin 6 of grey plug. 
 
 ## Further infos & links
 - If you search for further information, **tips & tricks on how to rapair your Renault Scenic II dashboard** - take a look at https://www.digital-kaos.co.uk/forums/showthread.php/59335-repair-dashboard-scenic-2
